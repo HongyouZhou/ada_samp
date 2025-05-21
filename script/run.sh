@@ -1,0 +1,1 @@
+accelerate launch --config_file configs/accelerate_config.yaml src/train.py 

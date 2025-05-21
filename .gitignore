@@ -1,0 +1,24 @@
+.idea
+
+.pytest_cache
+__pycache__
+
+# Files/ training data
+data
+datasets
+*.h5
+*.log.global
+**/log
+**/logs
+nohup.out
+**/nohup.out
+
+wandb
+*.png
+*.pth
+*.ckpt
+*.gltf
+*.pt
+runs
+
+**/submodules

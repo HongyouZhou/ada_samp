@@ -1,0 +1,60 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+    
+        {
+            "name": "Python: registration",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/registration/ransac/ransac_toy_example.py",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },      
+        {
+            "name": "Python Debugger: Prototype generator",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/prototype/stn/train.py",
+            "justMyCode": false,
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Python Debugger: fintune",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/prototype/stn/reg_plus.py",
+            "justMyCode": false,
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Python Debugger: gm_train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/representation/gs/train.py",
+            "justMyCode": false,
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }, 
+        {
+            "name": "Python Debugger: fid",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/modules/metrics/metric_is.py",
+            "justMyCode": false,
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+    ]
+}
