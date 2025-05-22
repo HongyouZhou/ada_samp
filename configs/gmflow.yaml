@@ -1,0 +1,65 @@
+# For get_trainer()
+method: gmflow
+
+# WandB log
+project: gmflow_project
+
+# Model structure definition
+model:
+  type: GMFlow
+  input_dim: 3                   # RGB image
+  feature_pyramid_levels: [1, 2, 3, 4]
+  feature_channels: 128
+  correlation_radius: 4
+  use_context: true
+  dropout: 0.2
+  pretrained: null               # Support pretrained path
+  
+timestep_sampler:
+  type: "uniform"
+  T: 1000
+
+noise_sampler:
+  type: "gaussian"
+
+# Loss function configuration
+loss:
+  type: flow_matching
+  loss_weights:
+    direct: 1.0
+    smooth: 0.1                  # flow smoothness regularization
+  use_uncertainty_weighting: false
+
+# Training related parameters
+train:
+  batch_size: 8
+  epochs: 100
+  lr: 0.0001
+  weight_decay: 0.0
+  optimizer: adam
+  scheduler: cosine             # Optional: constant, step, cosine
+  accumulation_steps: 2
+  clip_grad: 1.0
+  warmup_steps: 500
+  eval_interval: 5
+
+# Data configuration
+dataset:
+  name: checkerboard
+  n_rc: 4
+  num_samples: 1e8
+  thickness: 1.0
+  scale: 1.0
+  shift: [0.0, 0.0]
+  rotation: 0.0
+
+# Output control
+output_dir: outputs/gmflow_exp
+save_checkpoint: true
+save_interval: 10
+
+# Mixed precision control
+fp16: true
+
+# Optional flags
+debug: false

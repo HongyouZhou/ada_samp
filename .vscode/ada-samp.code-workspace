@@ -3,12 +3,12 @@
 		{
 			"path": ".."
 		},
-		{
-			"path": "../../pytorch-msssim"
-		},
-		{
-			"path": "../../taming-transformers"
-		},
+		// {
+		// 	"path": "../../pytorch-msssim"
+		// },
+		// {
+		// 	"path": "../../taming-transformers"
+		// },
 		{
 			"path": "../../../../../ssdArray/hongyou"
 		},
