@@ -6,6 +6,7 @@ __pycache__
 # Files/ training data
 data
 datasets
+image
 *.h5
 *.log.global
 **/log

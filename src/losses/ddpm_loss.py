@@ -2,13 +2,14 @@ from abc import abstractmethod
 from copy import deepcopy
 from functools import partial
 
+from omegaconf import DictConfig
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.losses.utils import reduce_loss
 from src.losses.pixelwise_loss import _reduction_modes
+from src.losses.utils import reduce_loss
 
 
 def is_list_of(seq, expected_type):
@@ -156,7 +157,7 @@ class DDPMLoss(nn.Module):
         if log_cfgs_ is not None:
             if not isinstance(log_cfgs_, list):
                 log_cfgs_ = [log_cfgs_]
-            assert is_list_of(log_cfgs_, dict)
+            assert is_list_of(log_cfgs_, DictConfig)
             for log_cfg_ in log_cfgs_:
                 log_type = log_cfg_.pop("type")
                 log_collect_fn = f"{log_type}_log_collect"

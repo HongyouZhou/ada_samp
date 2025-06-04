@@ -4,13 +4,15 @@ from copy import deepcopy
 import diffusers
 import torch
 import torch.nn as nn
+from omegaconf import DictConfig
 from rich.progress import Progress
 
-import src.samplers as samplers
+from src.losses.registry import build_loss
+from src.samplers.registry import get_noise_sampler, get_timestep_sampler
 from src.utils.gmflow_ops import gm_to_mean, gm_to_sample
 
 from .. import schedulers
-from .denoising.registry import build_model
+from .denoising.registry import get_model
 
 
 @torch.jit.script
@@ -27,25 +29,27 @@ class GaussianFlow(nn.Module):
         denoising=None,
         flow_loss=None,
         num_timesteps=1000,
-        timestep_sampler=dict(type="ContinuousTimeStepSampler", shift=1.0),
-        noise_sampler=dict(type="GaussianNoiseSampler"),
+        timestep_sampler=DictConfig(dict(type="continuous", shift=1.0)),
+        noise_sampler=DictConfig(dict(type="gaussian")),
         denoising_mean_mode="U",
         train_cfg=None,
         test_cfg=None,
+        **kwargs,
     ):
         super().__init__()
         # build denoising module in this function
         self.num_timesteps = num_timesteps
-        self.denoising = build_model(denoising) if isinstance(denoising, dict) else denoising
+        self.denoising = get_model(denoising) if isinstance(denoising, DictConfig) else denoising
         self.denoising_mean_mode = denoising_mean_mode
 
-        self.train_cfg = deepcopy(train_cfg) if train_cfg is not None else dict()
-        self.test_cfg = deepcopy(test_cfg) if test_cfg is not None else dict()
+        self.train_cfg = deepcopy(train_cfg) if train_cfg is not None else DictConfig({})
+        self.test_cfg = deepcopy(test_cfg) if test_cfg is not None else DictConfig({})
 
         # build sampler
-        self.timestep_sampler = samplers.build_timestep_sampler(timestep_sampler, default_args=dict(num_timesteps=num_timesteps))
-        self.noise_sampler = samplers.build_noise_sampler(noise_sampler, default_args=dict(num_timesteps=num_timesteps))
-        self.flow_loss = build_module(flow_loss) if flow_loss is not None else None
+        self.timestep_sampler = get_timestep_sampler(timestep_sampler)
+        self.noise_sampler = get_noise_sampler(noise_sampler)
+
+        self.flow_loss = build_loss(flow_loss) if flow_loss is not None else None
 
     def sample_forward_diffusion(self, x_0, t, noise):
         if t.dim() == 0:

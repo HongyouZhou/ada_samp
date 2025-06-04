@@ -3,6 +3,7 @@ from functools import partial
 import torch
 import torch.distributed as dist
 
+from src.losses.registry import register_loss
 from src.losses.ddpm_loss import DDPMLoss
 from src.losses.pixelwise_loss import mse_loss
 from src.losses.utils import reduce_loss, reduce_mean, weighted_loss
@@ -35,6 +36,7 @@ def gaussian_mixture_nll_loss(
     return loss
 
 
+@register_loss("DDPMLossMod")
 class DDPMLossMod(DDPMLoss):
 
     def __init__(self,
@@ -79,6 +81,7 @@ class DDPMLossMod(DDPMLoss):
         return reduce_loss(loss_rescaled, self.reduction)
 
 
+@register_loss("DDPMMSELossMod")
 class DDPMMSELossMod(DDPMLossMod):
     _default_data_info = dict(pred='eps_t_pred', target='noise')
 
@@ -153,7 +156,7 @@ class DDPMMSELossMod(DDPMLossMod):
         loss = self.loss_fn(**loss_input_dict) * 0.5
         return loss
 
-
+@register_loss("FlowNLLLoss")
 class FlowNLLLoss(DDPMLossMod):
     _default_data_info = dict(pred='u_t_pred', target='u_t', logstd='logstd')
 
@@ -285,6 +288,7 @@ class FlowNLLLoss(DDPMLossMod):
         return reduce_loss(loss_rescaled, self.reduction)
 
 
+@register_loss("GMFlowNLLLoss")
 class GMFlowNLLLoss(FlowNLLLoss):
     _default_data_info = dict(
         pred_means='means',

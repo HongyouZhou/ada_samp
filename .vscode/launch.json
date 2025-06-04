@@ -3,20 +3,10 @@
     "configurations": [
     
         {
-            "name": "Python: registration",
+            "name": "Python Debugger: train",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/registration/ransac/ransac_toy_example.py",
-            "justMyCode": false,
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            }
-        },      
-        {
-            "name": "Python Debugger: Prototype generator",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/prototype/stn/train.py",
+            "program": "${workspaceFolder}/script/train.py",
             "justMyCode": false,
             "console": "integratedTerminal",
             "env": {
@@ -24,32 +14,15 @@
             }
         },
         {
-            "name": "Python Debugger: fintune",
+            "name": "Python Debugger: ddp_train",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/prototype/stn/reg_plus.py",
-            "justMyCode": false,
-            "console": "integratedTerminal",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            }
-        },
-        {
-            "name": "Python Debugger: gm_train",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/representation/gs/train.py",
-            "justMyCode": false,
-            "console": "integratedTerminal",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            }
-        }, 
-        {
-            "name": "Python Debugger: fid",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/modules/metrics/metric_is.py",
+            "module": "accelerate.commands.launch",
+            "args": [
+                "--config_file", "accelerate_config.yaml",
+                "${workspaceFolder}/script/train.py",
+                "--config", "configs/checkboard.yaml" ,
+            ],
             "justMyCode": false,
             "console": "integratedTerminal",
             "env": {

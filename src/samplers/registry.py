@@ -1,29 +1,54 @@
-def build_timestep_sampler(cfg):
-    typ = cfg.get("type", "uniform")
-    T = cfg.get("T", 1000)
-    if typ == "uniform":
-        from .timestep_sampler import UniformTimestepSampler
-        return UniformTimestepSampler(T)
-    elif typ == "linear":
-        from .timestep_sampler import LinearTimestepSampler
-        return LinearTimestepSampler(T)
-    elif typ == "importance":
-        from .timestep_sampler import ImportanceTimestepSampler
-        return ImportanceTimestepSampler(T)
-    else:
-        raise ValueError(f"Unknown timestep sampler: {typ}")
+import importlib
 
+TIMESTEP_SAMPLER_REGISTRY = {}
+NOISE_SAMPLER_REGISTRY = {}
 
-def build_noise_sampler(cfg):
-    typ = cfg.get("type", "gaussian")
-    if typ == "gaussian":
-        from .noise_sampler import GaussianNoiseSampler
-        return GaussianNoiseSampler()
-    elif typ == "uniform":
-        from .noise_sampler import UniformNoiseSampler
-        return UniformNoiseSampler()
-    elif typ == "rademacher":
-        from .noise_sampler import RademacherNoiseSampler
-        return RademacherNoiseSampler()
-    else:
-        raise ValueError(f"Unknown noise sampler: {typ}")
+def register_timestep_sampler(name):
+    def decorator(cls):
+        module = cls.__module__
+        qualname = cls.__qualname__
+        TIMESTEP_SAMPLER_REGISTRY[name] = f"{module}.{qualname}"
+        return cls
+    return decorator
+
+def register_noise_sampler(name):
+    def decorator(cls):
+        module = cls.__module__
+        qualname = cls.__qualname__
+        NOISE_SAMPLER_REGISTRY[name] = f"{module}.{qualname}"
+        return cls
+    return decorator
+
+def get_timestep_sampler(cfg):
+    name = cfg.get("type", None)
+    if name is None:
+        raise ValueError("[get_timestep_sampler] Timestep sampler type is not specified.")
+
+    if name not in TIMESTEP_SAMPLER_REGISTRY:
+        raise ValueError(f"[get_timestep_sampler] Unknown timestep sampler '{name}'. Available: {list(TIMESTEP_SAMPLER_REGISTRY.keys())}")
+
+    module_path, class_name = TIMESTEP_SAMPLER_REGISTRY[name].rsplit(".", 1)
+    cfg.pop("type")
+    try:
+        module = importlib.import_module(module_path)
+        cls = getattr(module, class_name)
+        return cls(**cfg)
+    except Exception as e:
+        raise ImportError(f"[get_timestep_sampler] Failed to import {TIMESTEP_SAMPLER_REGISTRY[name]}: {e}") from e
+
+def get_noise_sampler(cfg):
+    name = cfg.get("type", None)
+    if name is None:
+        raise ValueError("[get_noise_sampler] Noise sampler type is not specified.")
+
+    if name not in NOISE_SAMPLER_REGISTRY:
+        raise ValueError(f"[get_noise_sampler] Unknown noise sampler '{name}'. Available: {list(NOISE_SAMPLER_REGISTRY.keys())}")
+
+    module_path, class_name = NOISE_SAMPLER_REGISTRY[name].rsplit(".", 1)
+    cfg.pop("type")
+    try:
+        module = importlib.import_module(module_path)
+        cls = getattr(module, class_name)
+        return cls(**cfg)
+    except Exception as e:
+        raise ImportError(f"[get_noise_sampler] Failed to import {NOISE_SAMPLER_REGISTRY[name]}: {e}") from e

@@ -8,6 +8,7 @@ TRAINER_REGISTRY = {
     "gmflow": "src.trainers.gmflow_trainer.GMFlowTrainer",
     "ddpm": "src.trainers.ddpm_trainer.DDPMTrainer",
     "flow_matching": "src.trainers.flowmatch_trainer.FlowMatchingTrainer",
+    "checkboard": "src.trainers.toymodel_trainer.CheckboardTrainer",
 }
 
 

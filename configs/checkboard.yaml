@@ -1,4 +1,4 @@
-method: gmflow
+method: checkboard
 
 # WandB log
 project: gmflow_project
@@ -7,44 +7,29 @@ project: gmflow_project
 model:
   type: GMFlow
   denoising:
-    type: 'GMDiTTransformer2DModel'
-    num_gaussians: 8
-    logstd_inner_dim: 1024
-    gm_num_logstd_layers: 2
-    num_attention_heads: 16
-    attention_head_dim: 72
-    in_channels: 4
-    num_layers: 28
-    sample_size: 32
-    torch_dtype: 'float32'
-    checkpointing: True
-  input_dim: 3                   # RGB image
-  feature_pyramid_levels: [1, 2, 3, 4]
-  feature_channels: 128
-  correlation_radius: 4
-  use_context: true
-  dropout: 0.2
-  pretrained: null               # Support pretrained path
-  
+    type: GMFlowMLP2DDenoiser
+    num_gaussians: 64
+  flow_loss:
+    type: GMFlowNLLLoss
+    log_cfgs:
+      type: quartile
+      prefix_name: loss_trans
+      total_timesteps: 1000
+    data_info:
+      pred_means: means
+      target: x_t_low
+      pred_logstds: logstds
+      pred_logweights: logweights
+  denoising_mean_mode: U
   timestep_sampler:
-    type: "continuous"
+    type: continuous
     shift: 1.0
+    logit_normal_enable: False
     num_timesteps: 1000
+  diffusion_use_ema: True
 
   noise_sampler:
     type: "gaussian"
-
-# Loss function configuration
-loss:
-  type: GMFlowNLLLoss
-  weight_scale: 2.0
-  log_cfgs:
-    type: None
-  data_info:
-    pred_means: "means"
-    target: "x_t_low"
-    pred_logstds: "logstds"
-    pred_logweights: "logweights"
 
 # Training related parameters
 train:
@@ -69,7 +54,7 @@ data:
     scale: 1.0
     shift: [0.0, 0.0]
     rotation: 0.0
-  train_loader:
+  train_dataloader:
     num_workers: 4
     batch_size: 32
 
