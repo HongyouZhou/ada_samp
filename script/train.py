@@ -47,6 +47,8 @@ def main():
     TrainerClass = get_trainer(cfg.method)
     trainer = TrainerClass(cfg, accelerator)
     trainer.train()
+    trainer.test()
+    accelerator.end_training()
 
 
 if __name__ == "__main__":

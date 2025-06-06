@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from rich.live import Live
 from rich.console import Console
+import torch
 
 if TYPE_CHECKING:
     import torch.nn as nn
@@ -52,11 +53,11 @@ class ProgressManager:
     def stop(self):
         self.live.stop()
 
-    def update_epoch(self, advance: int = 1, loss: float = None):
-        if loss is not None:
-            self.progress.update(self.epoch_task, advance=advance, loss=loss)
-        else:
-            self.progress.update(self.epoch_task, advance=advance)
+    def update_epoch(self, advance: int = 1):
+        self.progress.update(self.epoch_task, advance=advance)
+
+    def update_epoch_loss(self, loss: float):
+        self.progress.update(self.epoch_task, loss=loss)
 
     def add_batch_task(self, total_steps: int):
         if self.batch_task is not None:
@@ -106,22 +107,23 @@ class BaseTrainer(ABC):
             self.progress_manager = ProgressManager(self.cfg.train.epochs, total_steps)
             self.progress_manager.start()
 
-            for epoch in range(self.cfg.train.epochs):
-                self.train_epoch(epoch)
-                if self.val_dataloader:
-                    self.evaluate(epoch)
-                if self.is_main:
+        for epoch in range(1, self.cfg.train.epochs + 1):
+            loss_dict = self.train_epoch(epoch)
+            loss_tensor = torch.tensor(loss_dict["total_loss"], device=self.device)
+            gathered = self.accelerator.gather(loss_tensor)
+            avg_epoch_loss = gathered.float().mean().item()
+            avg_epoch_loss /= self.accelerator.num_processes
+            avg_epoch_loss /= len(self.train_dataloader)
+            if self.val_dataloader:
+                self.evaluate(epoch)
+            if self.is_main:
+                self.log_metrics(loss_dict, step=epoch, prefix="train")
+                if self.cfg.train.save_checkpoint and epoch % self.cfg.train.save_interval == 0:
                     self.save_checkpoint(epoch)
-                    self.progress_manager.update_epoch()
-
+                self.progress_manager.update_epoch()
+                self.progress_manager.update_epoch_loss(avg_epoch_loss)
+        if self.is_main:
             self.progress_manager.stop()
-        else:
-            for epoch in range(self.cfg.train.epochs):
-                self.train_epoch(epoch)
-                if self.val_dataloader:
-                    self.evaluate(epoch)
-                if self.is_main:
-                    self.save_checkpoint(epoch)
 
     @abstractmethod
     def train_epoch(self, epoch):
@@ -129,11 +131,14 @@ class BaseTrainer(ABC):
 
     @abstractmethod
     def evaluate(self, epoch):
-        raise NotImplementedError
-
-    @abstractmethod
-    def setup_dataloaders(self):
-        raise NotImplementedError
+        metrics = self._evaluate_local(epoch)
+        for k, v in metrics.items():
+            t = torch.tensor(v, device=self.device)
+            gathered = self.accelerator.gather(t)
+            metrics[k] = gathered.float().mean().item()
+        if self.is_main:
+            self.log_metrics(metrics, step=epoch, prefix="val")
+        return metrics
 
     @abstractmethod
     def save_checkpoint(self):
@@ -144,6 +149,9 @@ class BaseTrainer(ABC):
         pass
 
     def log_metrics(self, metrics: dict, step: Optional[int] = None, prefix: str = "train"):
+        if self.cfg.debug:
+            return
+
         if self.is_main:
             try:
                 import wandb

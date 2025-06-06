@@ -20,6 +20,11 @@ model:
       target: x_t_low
       pred_logstds: logstds
       pred_logweights: logweights
+  test_cfg:
+    output_mode: sample
+    sampler: GMFlowSDE
+    num_timesteps: 8
+    order: 2
   denoising_mean_mode: U
   timestep_sampler:
     type: continuous
@@ -34,7 +39,7 @@ model:
 # Training related parameters
 train:
   batch_size: 8
-  epochs: 100
+  epochs: 1000
   lr: 0.0001
   weight_decay: 0.0
   optimizer: adam
@@ -43,13 +48,20 @@ train:
   clip_grad: 1.0
   warmup_steps: 500
   eval_interval: 5
+  output_dir: outputs/toymodel_exp
+  save_checkpoint: false
+  save_interval: 50
+  
+test:
+  n_samples: 10000
+  out_path: outputs/toymodel_exp/test_samples.png
 
 # Data configuration
 data:
   train:
     type: CheckerboardData
     n_rc: 4
-    n_samples: 1e8
+    n_samples: 1e6
     thickness: 1.0
     scale: 1.0
     shift: [0.0, 0.0]
@@ -58,13 +70,8 @@ data:
     num_workers: 4
     batch_size: 32
 
-# Output control
-output_dir: outputs/gmflow_exp
-save_checkpoint: true
-save_interval: 10
-
 # Mixed precision control
 fp16: true
 
 # Optional flags
-debug: false
+debug: true

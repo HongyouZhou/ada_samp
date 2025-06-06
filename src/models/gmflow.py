@@ -406,8 +406,9 @@ class GMFlow(GaussianFlow, GMFlowMixin):
                 z_kr = gm_samples_to_gaussian_samples(denoising_output, u.unsqueeze(-4), axis_aligned=True).squeeze(-4)
                 z_kr_fft = torch.fft.fft2(z_kr, norm="ortho")
                 z_kr_fft = z_kr_fft.real + z_kr_fft.imag
+                # z_kr_fft = z_kr_fft.real**2 + z_kr_fft.imag**2
 
-            log_var = self.spectrum_net(output_g)
+            log_var = self.spectrum_net(output_g).clamp(min=-10, max=10)
 
             loss = z_kr_fft.square() * (torch.exp(-log_var) - 1) + log_var
             loss = loss.mean() * (0.5 * num_channels * self.spectral_loss_weight)
