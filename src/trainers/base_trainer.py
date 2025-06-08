@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Optional
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
-from rich.live import Live
-from rich.console import Console
+
 import torch
+from rich.console import Console
+from rich.live import Live
+from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
 if TYPE_CHECKING:
     import torch.nn as nn
@@ -96,6 +97,7 @@ class BaseTrainer(ABC):
         self.accelerator = accelerator
         self.device = accelerator.device
         self.is_main = accelerator.is_main_process
+        self.current_epoch = 0
 
         self.model = None
         self.train_dataloader = None
@@ -105,9 +107,11 @@ class BaseTrainer(ABC):
         if self.is_main:
             total_steps = self.cfg.train.epochs * len(self.train_dataloader)
             self.progress_manager = ProgressManager(self.cfg.train.epochs, total_steps)
+            self.progress_manager.update_epoch(self.current_epoch)
             self.progress_manager.start()
 
-        for epoch in range(1, self.cfg.train.epochs + 1):
+        for epoch in range(self.current_epoch + 1, self.cfg.train.epochs + 1):
+            self.current_epoch = epoch
             loss_dict = self.train_epoch(epoch)
             loss_tensor = torch.tensor(loss_dict["total_loss"], device=self.device)
             gathered = self.accelerator.gather(loss_tensor)
@@ -148,7 +152,7 @@ class BaseTrainer(ABC):
     def load_checkpoint(self):
         pass
 
-    def log_metrics(self, metrics: dict, step: Optional[int] = None, prefix: str = "train"):
+    def log_metrics(self, metrics: dict, step: int | None = None, prefix: str = "train"):
         if self.cfg.debug:
             return
 

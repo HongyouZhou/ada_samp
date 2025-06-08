@@ -49,7 +49,7 @@ def probabilistic_guidance_jit(
     return gaussian_output, bias, avg_var
 
 
-@torch.jit.script
+# @torch.jit.script
 def denoising_gm_convert_to_mean_jit(
     sigma_src,
     sigma_tgt,
@@ -364,6 +364,9 @@ class GMFlowMixin:
         self.prev_x_t = None
         self.prev_t = None
         self.prev_h = None
+        self.velocities = []
+        self.velocity_timesteps = []
+        self.velocity_batch_info = []
 
 
 class GMFlow(GaussianFlow, GMFlowMixin):
@@ -427,7 +430,7 @@ class GMFlow(GaussianFlow, GMFlowMixin):
             t_low = t_high * (1 - trans_ratio)
             t_low = torch.minimum(t_low, t_high - eps).clamp(min=0)
 
-            noise = self.noise_sampler.sample(x_0.shape[-3:]).to(x_0)  # (2 * num_batches, num_channels, h, w)
+            noise = self.noise_sampler.sample([2 * num_batches, num_channels, h, w]).to(x_0)  # (2 * num_batches, num_channels, h, w)
             noise_0, noise_1 = torch.chunk(noise, 2, dim=0)
 
             x_t_low, _, _ = self.sample_forward_diffusion(x_0, t_low, noise_0)
@@ -441,7 +444,7 @@ class GMFlow(GaussianFlow, GMFlowMixin):
         if self.spectrum_net is not None:
             loss_spectral = self.spectral_loss(denoising_output, x_0, x_t_high, t_high)
             log_vars.update(loss_spectral=float(loss_spectral))
-            loss = loss + loss_spectral
+            # loss = loss + loss_spectral
 
         return loss, log_vars
 
@@ -452,6 +455,7 @@ class GMFlow(GaussianFlow, GMFlowMixin):
         guidance_scale=0.0,
         test_cfg_override=dict(),
         show_pbar=False,
+        return_velocity=False,
         **kwargs,
     ):
         x_t = torch.randn_like(x_0) if noise is None else noise
@@ -520,6 +524,23 @@ class GMFlow(GaussianFlow, GMFlowMixin):
             gm_output = self.pred(x_t_input, t, **kwargs)
             assert isinstance(gm_output, dict)
             gm_output = self.u_to_x_0(gm_output, x_t_input, t)
+
+            if return_velocity:
+                inv_sigma = self.num_timesteps / t
+                # 保存完整的GMM信息
+                velocity_gmm = {
+                    'means': (x_t.unsqueeze(-4) - gm_output['means']) * inv_sigma,  # [batch, num_components, channels, height, width]
+                    'logstds': gm_output['logstds'],  # 保持原有的对数标准差
+                    'logweights': gm_output['logweights'],  # 保持原有的对数权重
+                }
+                
+                self.velocities.append(velocity_gmm)
+                self.velocity_timesteps.append(t.cpu().detach())
+                self.velocity_batch_info.append({
+                    'batch_size': x_t.size(0),
+                    'shape': x_t.shape[1:],
+                    'num_components': gm_output['means'].size(1)  # 添加高斯分量数量信息
+                })
 
             # ========== Probabilistic CFG ==========
             if use_guidance:
@@ -591,6 +612,17 @@ class GMFlow(GaussianFlow, GMFlowMixin):
             progress.stop()
             sys.stdout.write("\n")
 
+        if return_velocity:
+            velocity_data = {
+                'velocities': {
+                    'means': torch.stack([v['means'] for v in self.velocities], dim=0),  # [num_timesteps, batch, num_components, ...]
+                    'logstds': torch.stack([v['logstds'] for v in self.velocities], dim=0),
+                    'logweights': torch.stack([v['logweights'] for v in self.velocities], dim=0)
+                },
+                'timesteps': torch.stack(self.velocity_timesteps, dim=0),
+                'batch_info': self.velocity_batch_info[0]
+            }
+            return x_t.to(ori_dtype), velocity_data
         return x_t.to(ori_dtype)
 
     def forward_likelihood(self, x_0, *args, **kwargs):
@@ -626,3 +658,8 @@ class GMFlow(GaussianFlow, GMFlowMixin):
         logprobs = gm_spectral_logprobs(gm_output, x_0.unsqueeze(-4), power_spectrum).squeeze(-1)
 
         return logprobs
+
+    def clear_velocity_cache(self):
+        self.velocities = []
+        self.velocity_timesteps = []
+        self.velocity_batch_info = []

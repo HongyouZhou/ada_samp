@@ -28,7 +28,7 @@ def get_backend():
 
 class _gm1d_inverse_cdf(Function):
     @staticmethod
-    @custom_fwd(cast_inputs=torch.float32)
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(ctx, gm1d, scaled_cdfs, n_steps, eps, max_step_size, init_samples):
         means = gm1d['means']
         logstds = gm1d['logstds']

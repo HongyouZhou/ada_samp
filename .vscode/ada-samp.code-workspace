@@ -9,9 +9,9 @@
 		// {
 		// 	"path": "../../taming-transformers"
 		// },
-		{
-			"path": "../../../../../ssdArray/hongyou"
-		},
+		// {
+			// "path": "../../../../../ssdArray/hongyou"
+		// },
 	],
 	"settings": {}
 }

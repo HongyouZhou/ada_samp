@@ -1,14 +1,15 @@
-method: checkboard
+method: shapenetpart_seg
 
 # WandB log
-project: gmflow_project
+project: shapenetpart_seg
 
 # Model structure definition
 model:
   type: GMFlow
   denoising:
-    type: GMFlowMLP2DDenoiser
+    type: GMFlowMLPLabelDenoiser
     num_gaussians: 64
+    num_classes: 50
   flow_loss:
     type: GMFlowNLLLoss
     log_cfgs:
@@ -32,15 +33,17 @@ model:
     logit_normal_enable: False
     num_timesteps: 1000
   diffusion_use_ema: True
+
   noise_sampler:
     type: "gaussian"
 
 # Training related parameters
 train:
-  epochs: 50
+  batch_size: 4096
+  epochs: 20
   lr: 1e-5
   weight_decay: 0.0
-  optimizer: adamw
+  optimizer: adam
   scheduler: cosine             # Optional: constant, step, cosine
   accumulation_steps: 2
   clip_grad: 1.0
@@ -48,10 +51,8 @@ train:
   eval_interval: 5
   output_dir: outputs/toymodel_exp
   save_checkpoint: true
-  save_interval: 10  
-  resume_checkpoint: false
-  resume_from: outputs/toymodel_exp/20250608_1552/checkpoint_10.pt
-
+  save_interval: 1000
+  
 test:
   n_samples: 1e6
   out_path: outputs/toymodel_exp/test_samples.png
@@ -59,18 +60,39 @@ test:
 # Data configuration
 data:
   train:
-    type: CheckerboardData
-    n_rc: 8
-    n_samples: 1e8
-    thickness: 1.0
-    scale: 8.0
-    shift: [0.0, 0.0]
-    rotation: 0.0
+    type: ShapeNetPart
+    root: /ssdArray/hongyou/dev/data/shapenet
+    dataset_name: shapenetpart
+    num_points: 2048
+    split: train
+    load_name: True
+    load_file: True
+    segmentation: True
+    random_rotate: False
+    random_jitter: False
+    random_translate: False
   train_dataloader:
     num_workers: 4
-    batch_size: 4096
-    persistent_workers: false
-    pin_memory: false
+    batch_size: 1024
+    persistent_workers: true
+    pin_memory: true
+  val:
+    type: ShapeNetPart
+    root: /ssdArray/hongyou/dev/data/shapenet
+    dataset_name: shapenetpart
+    num_points: 2048
+    split: val
+    load_name: True
+    load_file: True
+    segmentation: True
+    random_rotate: False
+    random_jitter: False
+    random_translate: False
+  val_dataloader:
+    num_workers: 4
+    batch_size: 1024
+    persistent_workers: true
+    pin_memory: true
 
 # Mixed precision control
 fp16: true

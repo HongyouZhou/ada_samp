@@ -1,10 +1,14 @@
 import argparse
+import os
 
 from accelerate import Accelerator
 from omegaconf import OmegaConf
 
 import wandb
 from src.trainers import get_trainer
+
+os.environ['CUDA_LAUNCH_BLOCKING']="1"
+os.environ['TORCH_USE_CUDA_DSA'] = "1"
 
 
 def parse_args():
@@ -46,6 +50,8 @@ def main():
 
     TrainerClass = get_trainer(cfg.method)
     trainer = TrainerClass(cfg, accelerator)
+    if cfg.train.resume_checkpoint:
+        trainer.load_checkpoint()
     trainer.train()
     trainer.test()
     accelerator.end_training()
