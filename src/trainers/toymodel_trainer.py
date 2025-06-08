@@ -23,122 +23,6 @@ if TYPE_CHECKING:
     from accelerate import Accelerator
 
 
-def visualize_velocity_gmm(velocity_data, timestep_idx=0, batch_idx=0, save_path=None):
-    """
-    Visualize the velocity GMM at a specific timestep using a density plot style.
-
-    Args:
-        velocity_data (dict): Dictionary containing velocity GMM data
-        timestep_idx (int): Index of the timestep to visualize
-        batch_idx (int): Index of the batch to visualize
-        channel_idx (int): Index of the channel to visualize
-        save_path (str): Path to save the visualization
-    """
-    # Extract GMM parameters for the specified indices
-    means = velocity_data["velocities"]["means"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
-    logstds = velocity_data["velocities"]["logstds"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
-    logweights = velocity_data["velocities"]["logweights"][timestep_idx, batch_idx, :, 0, 0].cpu().numpy()
-
-    # Convert log weights to probabilities
-    weights = np.exp(logweights)
-    weights = weights / weights.sum()  # Normalize weights
-
-    # Create a grid for the density plot
-    x = np.linspace(-4.2, 4.2, 200)
-    y = np.linspace(-4.2, 4.2, 200)
-    X, Y = np.meshgrid(x, y)
-    positions = np.stack([X, Y], axis=-1)
-
-    # Calculate the density for each point
-    density = np.zeros_like(X)
-    for i in range(len(means)):
-        std = np.exp(logstds[0])
-        # Calculate Gaussian density
-        diff = positions - means[i]
-        exponent = -0.5 * np.sum(diff * diff, axis=-1) / (std * std)
-        gaussian = np.exp(exponent) / (2 * np.pi * std * std)
-        density += weights[i] * gaussian
-
-    # Normalize and create the image
-    density = density.T[::-1]  # Transpose and flip vertically
-    density = (density / density.max()).clip(0, 1)  # Normalize to [0, 1]
-    density_image = cm.viridis(density)
-    density_image = np.round(density_image * 255).clip(min=0, max=255).astype(np.uint8)
-
-    if save_path:
-        plt.imsave(save_path, density_image)
-    else:
-        plt.imshow(density_image)
-        plt.axis("off")
-        plt.show()
-
-
-def visualize_velocity_evolution(velocity_data, batch_idx=0, num_timesteps=5, save_dir=None):
-    """
-    Visualize the evolution of velocity GMM over multiple timesteps using density plots.
-
-    Args:
-        velocity_data (dict): Dictionary containing velocity GMM data
-        batch_idx (int): Index of the batch to visualize
-        channel_idx (int): Index of the channel to visualize
-        num_timesteps (int): Number of timesteps to visualize
-        save_dir (str): Directory to save the visualizations
-    """
-    # Get timestep indices to visualize
-    total_timesteps = len(velocity_data["timesteps"])
-    timestep_indices = np.linspace(0, total_timesteps - 1, num_timesteps, dtype=int)
-
-    # Create a grid for the density plot
-    x = np.linspace(-4.2, 4.2, 200)
-    y = np.linspace(-4.2, 4.2, 200)
-    X, Y = np.meshgrid(x, y)
-    positions = np.stack([X, Y], axis=-1)
-
-    # Create a figure with subplots
-    fig, axes = plt.subplots(1, num_timesteps, figsize=(5 * num_timesteps, 5))
-    if num_timesteps == 1:
-        axes = [axes]
-
-    for i, timestep_idx in enumerate(timestep_indices):
-        # Extract GMM parameters for the specified indices
-        means = velocity_data["velocities"]["means"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
-        logstds = velocity_data["velocities"]["logstds"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
-        logweights = velocity_data["velocities"]["logweights"][timestep_idx, batch_idx, :, 0, 0].cpu().numpy()
-
-        # Convert log weights to probabilities
-        weights = np.exp(logweights)
-        weights = weights / weights.sum()  # Normalize weights
-
-        # Calculate the density for each point
-        density = np.zeros_like(X)
-        for j in range(len(means)):
-            std = np.exp(logstds[0])
-            # Calculate Gaussian density
-            diff = positions - means[j]
-            exponent = -0.5 * np.sum(diff * diff, axis=-1) / (std * std)
-            gaussian = np.exp(exponent) / (2 * np.pi * std * std)
-            density += weights[j] * gaussian
-
-        # Normalize and create the image
-        density = density.T[::-1]  # Transpose and flip vertically
-        density = (density / density.max()).clip(0, 1)  # Normalize to [0, 1]
-        density_image = cm.viridis(density)
-        density_image = np.round(density_image * 255).clip(min=0, max=255).astype(np.uint8)
-
-        # Display the image
-        axes[i].imshow(density_image)
-        axes[i].axis("off")
-        axes[i].set_title(f"Timestep {timestep_idx}")
-
-    plt.tight_layout()
-
-    if save_dir:
-        plt.savefig(f"{save_dir}/velocity_evolution.png")
-        plt.close()
-    else:
-        plt.show()
-
-
 class CheckboardTrainer(BaseTrainer):
     def __init__(self, cfg, accelerator: "Accelerator"):
         super().__init__(cfg, accelerator)
@@ -285,3 +169,117 @@ class CheckboardTrainer(BaseTrainer):
 
         with open(meta_path, "w") as f:
             json.dump({"epoch": epoch}, f)
+
+    def visualize_velocity_gmm(self, velocity_data, timestep_idx=0, batch_idx=0, save_path=None):
+        """
+        Visualize the velocity GMM at a specific timestep using a density plot style.
+
+        Args:
+            velocity_data (dict): Dictionary containing velocity GMM data
+            timestep_idx (int): Index of the timestep to visualize
+            batch_idx (int): Index of the batch to visualize
+            channel_idx (int): Index of the channel to visualize
+            save_path (str): Path to save the visualization
+        """
+        # Extract GMM parameters for the specified indices
+        means = velocity_data["velocities"]["means"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
+        logstds = velocity_data["velocities"]["logstds"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
+        logweights = velocity_data["velocities"]["logweights"][timestep_idx, batch_idx, :, 0, 0].cpu().numpy()
+
+        # Convert log weights to probabilities
+        weights = np.exp(logweights)
+        weights = weights / weights.sum()  # Normalize weights
+
+        # Create a grid for the density plot
+        x = np.linspace(-self.cfg.data.train.scale - 0.5, self.cfg.data.train.scale + 0.5, 200)
+        y = np.linspace(-self.cfg.data.train.scale - 0.5, self.cfg.data.train.scale + 0.5, 200)
+        X, Y = np.meshgrid(x, y)
+        positions = np.stack([X, Y], axis=-1)
+
+        # Calculate the density for each point
+        density = np.zeros_like(X)
+        for i in range(len(means)):
+            std = np.exp(logstds[0])
+            # Calculate Gaussian density
+            diff = positions - means[i]
+            exponent = -0.5 * np.sum(diff * diff, axis=-1) / (std * std)
+            gaussian = np.exp(exponent) / (2 * np.pi * std * std)
+            density += weights[i] * gaussian
+
+        # Normalize and create the image
+        density = density.T[::-1]  # Transpose and flip vertically
+        density = (density / density.max()).clip(0, 1)  # Normalize to [0, 1]
+        density_image = cm.viridis(density)
+        density_image = np.round(density_image * 255).clip(min=0, max=255).astype(np.uint8)
+
+        if save_path:
+            plt.imsave(save_path, density_image)
+        else:
+            plt.imshow(density_image)
+            plt.axis("off")
+            plt.show()
+
+    def visualize_velocity_evolution(self, velocity_data, batch_idx=0, num_timesteps=5, save_dir=None):
+        """
+        Visualize the evolution of velocity GMM over multiple timesteps using density plots.
+
+        Args:
+            velocity_data (dict): Dictionary containing velocity GMM data
+            batch_idx (int): Index of the batch to visualize
+            channel_idx (int): Index of the channel to visualize
+            num_timesteps (int): Number of timesteps to visualize
+            save_dir (str): Directory to save the visualizations
+        """
+        # Get timestep indices to visualize
+        total_timesteps = len(velocity_data["timesteps"])
+        timestep_indices = np.linspace(0, total_timesteps - 1, num_timesteps, dtype=int)
+
+        # Create a grid for the density plot
+        x = np.linspace(-self.cfg.data.train.scale - 0.5, self.cfg.data.train.scale + 0.5, 200)
+        y = np.linspace(-self.cfg.data.train.scale - 0.5, self.cfg.data.train.scale + 0.5, 200)
+        X, Y = np.meshgrid(x, y)
+        positions = np.stack([X, Y], axis=-1)
+
+        # Create a figure with subplots
+        fig, axes = plt.subplots(1, num_timesteps, figsize=(5 * num_timesteps, 5))
+        if num_timesteps == 1:
+            axes = [axes]
+
+        for i, timestep_idx in enumerate(timestep_indices):
+            # Extract GMM parameters for the specified indices
+            means = velocity_data["velocities"]["means"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
+            logstds = velocity_data["velocities"]["logstds"][timestep_idx, batch_idx, :, :, 0, 0].cpu().numpy()
+            logweights = velocity_data["velocities"]["logweights"][timestep_idx, batch_idx, :, 0, 0].cpu().numpy()
+
+            # Convert log weights to probabilities
+            weights = np.exp(logweights)
+            weights = weights / weights.sum()  # Normalize weights
+
+            # Calculate the density for each point
+            density = np.zeros_like(X)
+            for j in range(len(means)):
+                std = np.exp(logstds[0])
+                # Calculate Gaussian density
+                diff = positions - means[j]
+                exponent = -0.5 * np.sum(diff * diff, axis=-1) / (std * std)
+                gaussian = np.exp(exponent) / (2 * np.pi * std * std)
+                density += weights[j] * gaussian
+
+            # Normalize and create the image
+            density = density.T[::-1]  # Transpose and flip vertically
+            density = (density / density.max()).clip(0, 1)  # Normalize to [0, 1]
+            density_image = cm.viridis(density)
+            density_image = np.round(density_image * 255).clip(min=0, max=255).astype(np.uint8)
+
+            # Display the image
+            axes[i].imshow(density_image)
+            axes[i].axis("off")
+            axes[i].set_title(f"Timestep {timestep_idx}")
+
+        plt.tight_layout()
+
+        if save_dir:
+            plt.savefig(f"{save_dir}/velocity_evolution.png")
+            plt.close()
+        else:
+            plt.show()
