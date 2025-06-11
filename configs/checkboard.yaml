@@ -1,39 +1,41 @@
-method: checkboard
-
 # WandB log
-project: gmflow_project
+project: toymodel_project
 
 # Model structure definition
-model:
-  type: GMFlow
-  denoising:
-    type: GMFlowMLP2DDenoiser
-    num_gaussians: 64
-  flow_loss:
-    type: GMFlowNLLLoss
-    log_cfgs:
-      type: quartile
-      prefix_name: loss_trans
-      total_timesteps: 1000
-    data_info:
-      pred_means: means
-      target: x_t_low
-      pred_logstds: logstds
-      pred_logweights: logweights
-  test_cfg:
-    output_mode: sample
-    sampler: GMFlowSDE
-    num_timesteps: 8
-    order: 2
-  denoising_mean_mode: U
-  timestep_sampler:
-    type: continuous
-    shift: 1.0
-    logit_normal_enable: False
-    num_timesteps: 1000
-  diffusion_use_ema: True
-  noise_sampler:
-    type: "gaussian"
+trainer:
+  type: toymodel
+  diffusion:
+    type: GMFlow
+    input_type: image
+    denoising:
+      type: GMFlowMLP2DDenoiser
+      num_gaussians: 64
+    flow_loss:
+      type: GMFlowNLLLoss
+      log_cfgs:
+        type: quartile
+        prefix_name: loss_trans
+        total_timesteps: 1000
+      data_info:
+        pred_means: means
+        target: x_t_low
+        pred_logstds: logstds
+        pred_logweights: logweights
+    denoising_mean_mode: U
+    timestep_sampler:
+      type: continuous
+      shift: 1.0
+      logit_normal_enable: False
+      num_timesteps: 1000
+    diffusion_use_ema: True
+    noise_sampler:
+      type: "gaussian"
+
+test_cfg:
+  output_mode: sample
+  sampler: GMFlowSDE
+  num_timesteps: 8
+  order: 2
 
 # Training related parameters
 train:
@@ -46,15 +48,15 @@ train:
   clip_grad: 1.0
   warmup_steps: 500
   eval_interval: 5
-  output_dir: outputs/toymodel_exp
-  save_checkpoint: true
+  output_dir: outputs
+  save_checkpoint: false
   save_interval: 10  
   resume_checkpoint: false
-  resume_from: outputs/toymodel_exp/20250608_1552/checkpoint_10.pt
+  resume_from: outputs/toymodel_exp/20250608_2116/checkpoint_100.pt
 
 test:
   n_samples: 1e6
-  out_path: outputs/toymodel_exp/test_samples.png
+  out_path: outputs
 
 # Data configuration
 data:

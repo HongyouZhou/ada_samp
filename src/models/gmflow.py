@@ -49,7 +49,7 @@ def probabilistic_guidance_jit(
     return gaussian_output, bias, avg_var
 
 
-# @torch.jit.script
+@torch.jit.script
 def denoising_gm_convert_to_mean_jit(
     sigma_src,
     sigma_tgt,
@@ -106,7 +106,7 @@ class GMFlowMixin:
 
     def u_to_x_0(self, denoising_output, x_t, t=None, sigma=None, eps=1e-6):
         if isinstance(denoising_output, dict) and "logweights" in denoising_output:
-            x_t = x_t.unsqueeze(-4)
+            x_t = x_t.unsqueeze(-5)
 
         if sigma is None:
             if not isinstance(t, torch.Tensor):
@@ -188,7 +188,7 @@ class GMFlowMixin:
         prediction_type="u",
     ):
         if isinstance(denoising_output, dict):
-            x_t_high = x_t_high.unsqueeze(-4)
+            x_t_high = x_t_high.unsqueeze(-5)
 
         bs = x_t_high.size(0)
         if not isinstance(t_low, torch.Tensor):
@@ -420,8 +420,9 @@ class GMFlow(GaussianFlow, GMFlowMixin):
     def forward_train(self, x_0, **kwargs):
         device = get_module_device(self)
 
-        assert x_0.dim() == 4
-        num_batches, num_channels, h, w = x_0.size()
+        assert x_0.dim() == 5
+        num_batches, num_channels, h, w, d = x_0.size()
+        noise_shape = [2 * num_batches, num_channels, h, w, d]
         trans_ratio = self.train_cfg.get("trans_ratio", 1.0)
         eps = self.train_cfg.get("eps", 1e-4)
 
@@ -430,7 +431,7 @@ class GMFlow(GaussianFlow, GMFlowMixin):
             t_low = t_high * (1 - trans_ratio)
             t_low = torch.minimum(t_low, t_high - eps).clamp(min=0)
 
-            noise = self.noise_sampler.sample([2 * num_batches, num_channels, h, w]).to(x_0)  # (2 * num_batches, num_channels, h, w)
+            noise = self.noise_sampler.sample(noise_shape).to(x_0)  # (2 * num_batches, num_channels, h, w)
             noise_0, noise_1 = torch.chunk(noise, 2, dim=0)
 
             x_t_low, _, _ = self.sample_forward_diffusion(x_0, t_low, noise_0)
@@ -444,7 +445,7 @@ class GMFlow(GaussianFlow, GMFlowMixin):
         if self.spectrum_net is not None:
             loss_spectral = self.spectral_loss(denoising_output, x_0, x_t_high, t_high)
             log_vars.update(loss_spectral=float(loss_spectral))
-            # loss = loss + loss_spectral
+            loss = loss + loss_spectral
 
         return loss, log_vars
 
@@ -628,18 +629,13 @@ class GMFlow(GaussianFlow, GMFlowMixin):
     def forward_likelihood(self, x_0, *args, **kwargs):
         device = get_module_device(self)
 
-        assert x_0.dim() == 4
-        num_batches, num_channels, h, w = x_0.size()
+        assert x_0.dim() == 5
+        num_batches, num_channels, h, w, d = x_0.size()
+        noise_shape = [2 * num_batches, num_channels, h, w, d]
 
         t = torch.rand(num_batches, device=device, dtype=x_0.dtype).clamp(min=1e-4) * self.num_timesteps
 
-        noise = self.noise_sampler.sample(
-            None,
-            x_0.shape[-3:],
-            num_timesteps=self.num_timesteps,
-            num_batches=2 * x_0.size(0),
-            timesteps_noise=False,
-        ).to(x_0)  # (2 * num_batches, num_channels, h, w)
+        noise = self.noise_sampler.sample(noise_shape).to(x_0)  # (2 * num_batches, num_channels, h, w, d)
 
         x_t, _, _ = self.sample_forward_diffusion(x_0, t, noise)
 

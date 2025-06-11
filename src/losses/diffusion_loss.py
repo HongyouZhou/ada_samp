@@ -21,16 +21,16 @@ def gaussian_mixture_nll_loss(
         pred_means, target, pred_logstds, pred_logweights, eps=1e-4):
     """
     Args:
-        pred_means (torch.Tensor): Shape (bs, *, num_gaussians, c, h, w)
-        target (torch.Tensor): Shape (bs, *, c, h, w)
-        pred_logstds (torch.Tensor): Shape (bs, *, 1 or num_gaussians, 1 or c, 1 or h, 1 or w)
-        pred_logweights (torch.Tensor): Shape (bs, *, num_gaussians, 1, h, w)
+        pred_means (torch.Tensor): Shape (bs, *, num_gaussians, c, h, w, d)
+        target (torch.Tensor): Shape (bs, *, c, h, w, d)
+        pred_logstds (torch.Tensor): Shape (bs, *, 1 or num_gaussians, 1 or c, 1 or h, 1 or w, 1 or d)
+        pred_logweights (torch.Tensor): Shape (bs, *, num_gaussians, 1, h, w, d)
 
     Returns:
-        torch.Tensor: Shape (bs, *, h, w)
+        torch.Tensor: Shape (bs, *, h, w, d)
     """
     inverse_std = torch.exp(-pred_logstds).clamp(max=1 / eps)
-    diff_weighted = (pred_means - target.unsqueeze(-4)) * inverse_std
+    diff_weighted = (pred_means - target.unsqueeze(-5)) * inverse_std
     gaussian_ll = (-0.5 * diff_weighted.square() - pred_logstds).sum(dim=-3)  # (bs, *, num_gaussians, h, w)
     loss = -torch.logsumexp(gaussian_ll + pred_logweights.squeeze(-3), dim=-3)
     return loss

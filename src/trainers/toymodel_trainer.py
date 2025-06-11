@@ -10,11 +10,11 @@ import torch as th
 from accelerate import Accelerator
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 from torch.utils.data import DataLoader, DistributedSampler
-from matplotlib.patches import Ellipse
 
 from src.datasets.registry import get_dataset
 from src.models.gmflow import GMFlow
 from src.trainers.base_trainer import BaseTrainer
+from src.trainers.registry import register_trainer
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -22,11 +22,11 @@ torch.backends.cudnn.allow_tf32 = True
 if TYPE_CHECKING:
     from accelerate import Accelerator
 
-
+@register_trainer("toymodel")
 class CheckboardTrainer(BaseTrainer):
     def __init__(self, cfg, accelerator: "Accelerator"):
         super().__init__(cfg, accelerator)
-        self.model = GMFlow(**cfg.model)
+        self.model = GMFlow(**cfg.trainer.diffusion, test_cfg=cfg.test_cfg)
         self.optimizer = th.optim.AdamW(self.model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
 
         self.data = get_dataset(cfg.data.train)
@@ -40,6 +40,8 @@ class CheckboardTrainer(BaseTrainer):
         else:
             self.train_dataloader = DataLoader(self.data, **cfg.data.train_dataloader, sampler=DistributedSampler(self.data))
         self.val_dataloader = None
+        
+        self.batch_size = cfg.data.train_dataloader.batch_size
 
         self.model, self.optimizer, self.train_dataloader, self.val_dataloader = self.accelerator.prepare(
             self.model,
@@ -47,13 +49,6 @@ class CheckboardTrainer(BaseTrainer):
             self.train_dataloader,
             self.val_dataloader,
         )
-
-        timestamp = time.strftime("%Y%m%d_%H%M")
-        out_path = os.path.abspath(cfg.test.out_path)
-        out_dir = os.path.dirname(out_path)
-        self.out_dir = os.path.join(out_dir, timestamp)
-        os.makedirs(self.out_dir, exist_ok=True)
-        self.out_path = os.path.join(self.out_dir, os.path.basename(out_path))
 
     def train_epoch(self, epoch: int):
         self.model.train()
@@ -66,8 +61,6 @@ class CheckboardTrainer(BaseTrainer):
             self.progress_manager.add_batch_task(len(self.train_dataloader))
 
         for step, batch in enumerate(self.train_dataloader):
-            if torch.isnan(batch["x"]).any() or torch.isinf(batch["x"]).any():
-                print("Found inf/nan in data!")
             loss = self.train_step(batch)
             total_loss += loss
 
@@ -79,12 +72,11 @@ class CheckboardTrainer(BaseTrainer):
         return {"total_loss": total_loss}
 
     def train_step(self, batch):
-        bs = batch["x"].size(0)
+        x = batch["x"].reshape(self.batch_size, 2, 1, 1, 1)
 
         self.optimizer.zero_grad()
-
         with self.accelerator.autocast():
-            loss, log_vars = self.model(batch["x"].reshape(bs, 2, 1, 1), return_loss=True)
+            loss, log_vars = self.model(x, return_loss=True)
 
         self.accelerator.backward(loss.mean())
 
@@ -117,7 +109,7 @@ class CheckboardTrainer(BaseTrainer):
         with progress:
             task = progress.add_task("Generating samples...", total=int(self.cfg.test.n_samples // self.cfg.data.train_dataloader.batch_size))
             for _ in range(int(self.cfg.test.n_samples // self.cfg.data.train_dataloader.batch_size)):
-                noise = torch.randn((self.cfg.data.train_dataloader.batch_size, 2, 1, 1), device=self.device)
+                noise = torch.randn((self.cfg.data.train_dataloader.batch_size, 2, 1, 1, 1), device=self.device)
                 x_t, velocity_data = self.model(x_0=noise, return_loss=False, return_velocity=True)
                 samples.append(x_t.reshape(self.cfg.data.train_dataloader.batch_size, 2).cpu().detach().numpy())
                 progress.update(task, advance=1)
@@ -136,39 +128,13 @@ class CheckboardTrainer(BaseTrainer):
         histo_image = (histo.T[::-1] / 160).clip(0, 1)
         histo_image = cm.viridis(histo_image)
         histo_image = np.round(histo_image * 255).clip(min=0, max=255).astype(np.uint8)
-        plt.imsave(self.out_path, histo_image)
+        plt.imsave(os.path.join(self.out_dir, "sample_histogram.png"), histo_image)
 
-        print(f"Sample histogram saved to {self.out_path}.")
+        print(f"Sample histogram saved to {os.path.join(self.out_dir, 'sample_histogram.png')}.")
 
-        visualize_velocity_gmm(velocity_data, timestep_idx=0, batch_idx=0, save_path=os.path.join(self.out_dir, "velocity_gmm.png"))
+        self.visualize_velocity_gmm(velocity_data, timestep_idx=0, batch_idx=0, save_path=os.path.join(self.out_dir, "velocity_gmm.png"))
 
-        visualize_velocity_evolution(velocity_data, batch_idx=0, num_timesteps=8, save_dir=self.out_dir)
-
-    def load_checkpoint(self):
-        # find the latest checkpoint
-        if self.cfg.train.resume_from is None:
-            return
-        self.accelerator.load_state(self.cfg.train.resume_from)
-
-        # Load the epoch from meta file
-        meta_path = os.path.join(os.path.dirname(self.cfg.train.resume_from), "meta.json")
-        if os.path.exists(meta_path):
-            import json
-
-            with open(meta_path) as f:
-                meta = json.load(f)
-                self.current_epoch = meta.get("epoch", 0) + 1  # Start from next epoch
-
-    def save_checkpoint(self, epoch: int):
-        # Save the model state
-        self.accelerator.save_state(os.path.join(self.out_dir, f"checkpoint_{epoch}.pt"))
-
-        # Save the epoch in a meta file
-        meta_path = os.path.join(self.out_dir, "meta.json")
-        import json
-
-        with open(meta_path, "w") as f:
-            json.dump({"epoch": epoch}, f)
+        self.visualize_velocity_evolution(velocity_data, batch_idx=0, num_timesteps=8, save_dir=self.out_dir)
 
     def visualize_velocity_gmm(self, velocity_data, timestep_idx=0, batch_idx=0, save_path=None):
         """

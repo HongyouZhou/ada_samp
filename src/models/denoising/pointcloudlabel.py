@@ -2,10 +2,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from models.denoising.toymodel import SinCos2DPosEmbed, Timesteps, get_1d_sincos_pos_embed
+from einops import rearrange
 
 from .registry import register_model
+from .toymodel import Timesteps, get_1d_sincos_pos_embed
 
 
 class SinCos1DPosEmbed(nn.Module):
@@ -31,21 +31,22 @@ class GMFlowMLPLabelDenoiser(nn.Module):
     def __init__(
         self,
         num_gaussians=32,
-        pos_min_period=5e-3,
-        pos_max_period=50,
         embed_dim=256,
         hidden_dim=512,
         constant_logstd=None,
         num_layers=5,
         num_classes=10,
+        num_points=2048, # number of points in each data
+        pc_embed_dim=256,  # New parameter for point cloud embedding dimension
     ):
         super().__init__()
         self.num_gaussians = num_gaussians
         self.constant_logstd = constant_logstd
         self.time_proj = Timesteps(num_channels=embed_dim, flip_sin_to_cos=True, downscale_freq_shift=1)
-        self.label_emb = nn.Embedding(num_classes, embed_dim)
+        
 
-        in_dim = embed_dim * 2
+        # Increased input dimension to include point cloud embedding
+        in_dim = embed_dim
         mlp = []
         for _ in range(num_layers):
             mlp.append(nn.Linear(in_dim, hidden_dim))
@@ -68,20 +69,34 @@ class GMFlowMLPLabelDenoiser(nn.Module):
         if self.constant_logstd is None:
             nn.init.zeros_(self.out_logstds.weight)
 
-    def forward(self, hidden_states, timestep):
-        shape = hidden_states.shape
-        bs = shape[0]
-        extra_dims = shape[2:]
-
-        t_emb = self.time_proj(timestep).to(hidden_states)
-        label_emb = self.label_emb(hidden_states.reshape(bs, 1)).to(hidden_states)
-        embeddings = torch.cat([t_emb, label_emb], dim=-1)
-
+    def forward(self, seg_emb, timestep, pc_emb):
+        """
+        Args:
+            seg_emb (torch.Tensor): Shape (B, N, embed_dim, 1, 1) - Segmentation labels
+            pc_emb (torch.Tensor): Shape (B, N, embed_dim, 1, 1) - Point cloud coordinates
+            timestep (torch.Tensor): Shape (B, N,) - Timesteps
+        """
+        bs, n, emb_dim= seg_emb.shape[:3]
+        extra_dims = seg_emb.shape[3:]
+        
+        # Process timestep embedding
+        t_emb = self.time_proj(timestep).unsqueeze(1).to(seg_emb)
+        seg_emb = seg_emb.reshape(bs, n, emb_dim)
+        pc_emb = pc_emb.reshape(bs, n, emb_dim)
+        # sum all embeddings
+        embeddings = t_emb + seg_emb + pc_emb
+        embeddings = embeddings.reshape(bs, n, emb_dim)
+        
+        # Process through MLP
         feat = self.net(embeddings)
-        means = self.out_means(feat).reshape(bs, self.num_gaussians, 1, *extra_dims)
-        logweights = self.out_logweights(feat).log_softmax(dim=-1).reshape(bs, self.num_gaussians, 1, *extra_dims)
+        
+        # Generate output distributions
+        means = self.out_means(feat).reshape(bs, self.num_gaussians, n, 1, *extra_dims) # (B, num_gaussians, num_points, 1, *extra_dims)
+        logweights = self.out_logweights(feat).log_softmax(dim=-1).reshape(bs, self.num_gaussians, n, 1, *extra_dims) # (B, num_gaussians, num_points, 1, *extra_dims)
+        
         if self.constant_logstd is None:
-            logstds = self.out_logstds(feat).reshape(bs, 1, 1, *extra_dims)
+            logstds = self.out_logstds(feat).reshape(bs, 1, n, 1, *extra_dims) # (B, 1, n, 1, *extra_dims) isotropic gaussian logstd
         else:
-            logstds = torch.full((bs, 1, 1, *extra_dims), self.constant_logstd, dtype=hidden_states.dtype, device=hidden_states.device)
+            logstds = torch.full((bs, 1, n, 1, *extra_dims), self.constant_logstd, dtype=seg_emb.dtype, device=seg_emb.device)
+            
         return dict(means=means, logweights=logweights, logstds=logstds)

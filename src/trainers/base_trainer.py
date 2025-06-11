@@ -1,3 +1,5 @@
+import os
+import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Optional
 
@@ -32,20 +34,12 @@ class ProgressManager:
             TextColumn("[yellow]Loss: {task.fields[loss]:.4f}"),
             TimeRemainingColumn(),
             transient=True,
-            console=self.console
+            console=self.console,
         )
 
-        self.live = Live(
-            renderable=self.progress,
-            refresh_per_second=50,
-            transient=True
-        )
+        self.live = Live(renderable=self.progress, refresh_per_second=50, transient=True)
 
-        self.epoch_task = self.progress.add_task(
-            "[green]Epoch Progress", 
-            total=total_epochs,
-            loss=0.0
-        )
+        self.epoch_task = self.progress.add_task("[green]Epoch Progress", total=total_epochs, loss=0.0)
         self.batch_task = None
 
     def start(self):
@@ -64,11 +58,7 @@ class ProgressManager:
         if self.batch_task is not None:
             self.progress.remove_task(self.batch_task)
 
-        self.batch_task = self.progress.add_task(
-            "[blue]Batch Progress", 
-            total=total_steps,
-            loss=0.0
-        )
+        self.batch_task = self.progress.add_task("[blue]Batch Progress", total=total_steps, loss=0.0)
 
     def update_batch(self, advance: int = 1, loss: float = None):
         if self.batch_task is not None:
@@ -102,6 +92,10 @@ class BaseTrainer(ABC):
         self.model = None
         self.train_dataloader = None
         self.val_dataloader = None
+
+        timestamp = time.strftime("%Y%m%d_%H%M")
+        self.out_dir = os.path.join(cfg.train.output_dir, cfg.project, timestamp)
+        os.makedirs(self.out_dir, exist_ok=True)
 
     def train(self):
         if self.is_main:
@@ -144,13 +138,26 @@ class BaseTrainer(ABC):
             self.log_metrics(metrics, step=epoch, prefix="val")
         return metrics
 
-    @abstractmethod
-    def save_checkpoint(self):
-        pass
-
-    @abstractmethod
     def load_checkpoint(self):
-        pass
+        if self.cfg.train.resume_from is None:
+            return
+        self.accelerator.load_state(self.cfg.train.resume_from)
+
+        meta_path = os.path.join(os.path.dirname(self.cfg.train.resume_from), "meta.json")
+        if os.path.exists(meta_path):
+            import json
+            with open(meta_path) as f:
+                meta = json.load(f)
+                self.current_epoch = meta.get("epoch", 0) + 1  # Start from next epoch
+
+    def save_checkpoint(self, epoch: int):
+        self.accelerator.save_state(os.path.join(self.out_dir, f"checkpoint_{epoch}.pt"))
+
+        meta_path = os.path.join(self.out_dir, "meta.json")
+        import json
+
+        with open(meta_path, "w") as f:
+            json.dump({"epoch": epoch}, f)
 
     def log_metrics(self, metrics: dict, step: int | None = None, prefix: str = "train"):
         if self.cfg.debug:

@@ -48,7 +48,7 @@ def main():
 
     accelerator = Accelerator()
 
-    TrainerClass = get_trainer(cfg.method)
+    TrainerClass = get_trainer(cfg)
     trainer = TrainerClass(cfg, accelerator)
     if cfg.train.resume_checkpoint:
         trainer.load_checkpoint()

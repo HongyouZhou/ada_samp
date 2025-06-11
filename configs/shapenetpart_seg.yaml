@@ -1,61 +1,68 @@
-method: shapenetpart_seg
-
 # WandB log
 project: shapenetpart_seg
 
 # Model structure definition
-model:
-  type: GMFlow
-  denoising:
-    type: GMFlowMLPLabelDenoiser
-    num_gaussians: 64
-    num_classes: 50
-  flow_loss:
-    type: GMFlowNLLLoss
-    log_cfgs:
-      type: quartile
-      prefix_name: loss_trans
-      total_timesteps: 1000
-    data_info:
-      pred_means: means
-      target: x_t_low
-      pred_logstds: logstds
-      pred_logweights: logweights
-  test_cfg:
-    output_mode: sample
-    sampler: GMFlowSDE
-    num_timesteps: 8
-    order: 2
-  denoising_mean_mode: U
-  timestep_sampler:
-    type: continuous
-    shift: 1.0
-    logit_normal_enable: False
-    num_timesteps: 1000
-  diffusion_use_ema: True
+trainer:
+  type: shapenetpart_seg
+  diffusion:
+    type: GMFlow
+    input_type: point_cloud
+    embedding:
+      type: xxx
+      num_classes: 50
+      embed_dim: 256
+      pc_embed_dim: 256
+    denoising:
+      type: GMFlowMLPLabelDenoiser
+      num_gaussians: 8
+      num_classes: 50
+    flow_loss:
+      type: GMFlowNLLLoss
+      log_cfgs:
+        type: quartile
+        prefix_name: loss_trans
+        total_timesteps: 1000
+      data_info:
+        pred_means: means
+        target: x_t_low
+        pred_logstds: logstds
+        pred_logweights: logweights
+    denoising_mean_mode: U
+    timestep_sampler:
+      type: continuous
+      shift: 1.0
+      logit_normal_enable: False
+      num_timesteps: 1000
+    diffusion_use_ema: True
+    noise_sampler:
+      type: "gaussian"
 
-  noise_sampler:
-    type: "gaussian"
+test_cfg:
+  output_mode: sample
+  sampler: GMFlowSDE
+  num_timesteps: 8
+  order: 2
 
 # Training related parameters
 train:
-  batch_size: 4096
-  epochs: 20
+  epochs: 100
   lr: 1e-5
   weight_decay: 0.0
-  optimizer: adam
+  optimizer: adamw
   scheduler: cosine             # Optional: constant, step, cosine
   accumulation_steps: 2
   clip_grad: 1.0
   warmup_steps: 500
   eval_interval: 5
-  output_dir: outputs/toymodel_exp
+  output_dir: outputs/shapenetpart_seg_exp
   save_checkpoint: true
-  save_interval: 1000
-  
+  save_interval: 10  
+  resume_checkpoint: false
+  resume_from: outputs/shapenetpart_seg_exp/20250608_1552/checkpoint_10.pt
+
 test:
   n_samples: 1e6
-  out_path: outputs/toymodel_exp/test_samples.png
+  out_path: outputs/shapenetpart_seg_exp/test_samples.png
 
 # Data configuration
 data:
@@ -73,7 +80,7 @@ data:
     random_translate: False
   train_dataloader:
     num_workers: 4
-    batch_size: 1024
+    batch_size: 64
     persistent_workers: true
     pin_memory: true
   val:
@@ -90,9 +97,9 @@ data:
     random_translate: False
   val_dataloader:
     num_workers: 4
-    batch_size: 1024
-    persistent_workers: true
-    pin_memory: true
+    batch_size: 32
+    persistent_workers: false
+    pin_memory: false
 
 # Mixed precision control
 fp16: true

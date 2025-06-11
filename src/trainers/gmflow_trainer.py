@@ -7,11 +7,13 @@ from torch.utils.data import DataLoader, DistributedSampler
 from src.datasets.registry import get_dataset
 from src.models.gmflow import GMFlow
 from src.trainers.base_trainer import BaseTrainer
+from src.trainers.registry import register_trainer
 
 if TYPE_CHECKING:
     from accelerate import Accelerator
 
 
+@register_trainer("gmflow")
 class GMFlowTrainer(BaseTrainer):
     def __init__(self, cfg, accelerator: "Accelerator"):
         super().__init__(cfg, accelerator)
@@ -60,7 +62,6 @@ class GMFlowTrainer(BaseTrainer):
 
         if self.accelerator.is_main_process:
             print(f"[Epoch {epoch}] Avg Loss: {avg_loss:.4f}")
-            
 
     def evaluate(self):
         pass

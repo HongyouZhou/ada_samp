@@ -14,14 +14,30 @@
             }
         },
         {
-            "name": "Python Debugger: ddp_train",
+            "name": "Python Debugger: toymodel",
             "type": "debugpy",
             "request": "launch",
             "module": "accelerate.commands.launch",
             "args": [
-                "--config_file", "accelerate_config.yaml",
+                "--config_file", "accelerate_debug.yaml",
                 "${workspaceFolder}/script/train.py",
                 "--config", "configs/checkboard.yaml" ,
+            ],
+            "justMyCode": false,
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Python Debugger: shapenetpart_seg",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "accelerate.commands.launch",
+            "args": [
+                "--config_file", "accelerate_debug.yaml",
+                "${workspaceFolder}/script/train.py",
+                "--config", "configs/shapenetpart_seg.yaml" ,
             ],
             "justMyCode": false,
             "console": "integratedTerminal",
