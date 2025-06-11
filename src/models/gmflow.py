@@ -106,7 +106,7 @@ class GMFlowMixin:
 
     def u_to_x_0(self, denoising_output, x_t, t=None, sigma=None, eps=1e-6):
         if isinstance(denoising_output, dict) and "logweights" in denoising_output:
-            x_t = x_t.unsqueeze(-5)
+            x_t = x_t.unsqueeze(-4)
 
         if sigma is None:
             if not isinstance(t, torch.Tensor):
@@ -188,7 +188,7 @@ class GMFlowMixin:
         prediction_type="u",
     ):
         if isinstance(denoising_output, dict):
-            x_t_high = x_t_high.unsqueeze(-5)
+            x_t_high = x_t_high.unsqueeze(-4)
 
         bs = x_t_high.size(0)
         if not isinstance(t_low, torch.Tensor):
@@ -420,9 +420,9 @@ class GMFlow(GaussianFlow, GMFlowMixin):
     def forward_train(self, x_0, **kwargs):
         device = get_module_device(self)
 
-        assert x_0.dim() == 5
-        num_batches, num_channels, h, w, d = x_0.size()
-        noise_shape = [2 * num_batches, num_channels, h, w, d]
+        assert x_0.dim() == 4
+        num_batches, num_channels, h, w = x_0.size()
+        noise_shape = [2 * num_batches, num_channels, h, w]
         trans_ratio = self.train_cfg.get("trans_ratio", 1.0)
         eps = self.train_cfg.get("eps", 1e-4)
 
@@ -528,11 +528,10 @@ class GMFlow(GaussianFlow, GMFlowMixin):
 
             if return_velocity:
                 inv_sigma = self.num_timesteps / t
-                # 保存完整的GMM信息
                 velocity_gmm = {
                     'means': (x_t.unsqueeze(-4) - gm_output['means']) * inv_sigma,  # [batch, num_components, channels, height, width]
-                    'logstds': gm_output['logstds'],  # 保持原有的对数标准差
-                    'logweights': gm_output['logweights'],  # 保持原有的对数权重
+                    'logstds': gm_output['logstds'],
+                    'logweights': gm_output['logweights'],
                 }
                 
                 self.velocities.append(velocity_gmm)
@@ -540,7 +539,7 @@ class GMFlow(GaussianFlow, GMFlowMixin):
                 self.velocity_batch_info.append({
                     'batch_size': x_t.size(0),
                     'shape': x_t.shape[1:],
-                    'num_components': gm_output['means'].size(1)  # 添加高斯分量数量信息
+                    'num_components': gm_output['means'].size(1)
                 })
 
             # ========== Probabilistic CFG ==========
@@ -629,13 +628,13 @@ class GMFlow(GaussianFlow, GMFlowMixin):
     def forward_likelihood(self, x_0, *args, **kwargs):
         device = get_module_device(self)
 
-        assert x_0.dim() == 5
-        num_batches, num_channels, h, w, d = x_0.size()
-        noise_shape = [2 * num_batches, num_channels, h, w, d]
+        assert x_0.dim() == 4
+        num_batches, num_channels, h, w = x_0.size()
+        noise_shape = [2 * num_batches, num_channels, h, w]
 
         t = torch.rand(num_batches, device=device, dtype=x_0.dtype).clamp(min=1e-4) * self.num_timesteps
 
-        noise = self.noise_sampler.sample(noise_shape).to(x_0)  # (2 * num_batches, num_channels, h, w, d)
+        noise = self.noise_sampler.sample(noise_shape).to(x_0)  # (2 * num_batches, num_channels, h, w)
 
         x_t, _, _ = self.sample_forward_diffusion(x_0, t, noise)
 

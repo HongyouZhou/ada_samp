@@ -5,8 +5,8 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
 import torch as th
+import torch.nn as nn
 from accelerate import Accelerator
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 from torch.utils.data import DataLoader, DistributedSampler
@@ -25,26 +25,10 @@ if TYPE_CHECKING:
 
 @register_trainer("shapenetpart_seg")
 class ShapenetPartSegTrainer(BaseTrainer):
-    def __init__(self, cfg, accelerator: "Accelerator"):
-        super().__init__(cfg, accelerator)
+    def __init__(self, cfg, accelerator: "Accelerator", **kwargs):
+        super().__init__(cfg, accelerator, **kwargs)
         self.model = GMFlow(**cfg.trainer.diffusion, train_cfg=cfg.train, test_cfg=cfg.test_cfg)
-        self.seg_emb = nn.Embedding(cfg.trainer.diffusion.embedding.num_classes, cfg.trainer.diffusion.embedding.embed_dim)
-        # Point cloud embedding network
-        self.pc_embed = nn.Sequential(
-            nn.Linear(3, cfg.trainer.diffusion.embedding.pc_embed_dim),  # Assuming point cloud has 3 coordinates (x,y,z)
-            nn.SiLU(),
-            nn.Linear(cfg.trainer.diffusion.embedding.pc_embed_dim, cfg.trainer.diffusion.embedding.pc_embed_dim),
-            nn.SiLU(),
-            nn.Linear(cfg.trainer.diffusion.embedding.pc_embed_dim, cfg.trainer.diffusion.embedding.embed_dim),
-        )
-        self.optimizer = th.optim.Adam(
-            [
-                {"params": self.model.parameters()},
-                {"params": self.seg_emb.parameters()},
-                {"params": self.pc_embed.parameters()},
-            ],
-            lr=cfg.train.lr,
-        )
+        self.optimizer = th.optim.Adam([{"params": self.model.parameters()}], lr=cfg.train.lr)
         self.scheduler = th.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=cfg.train.epochs)
 
         if cfg.train.resume_checkpoint:
@@ -59,17 +43,20 @@ class ShapenetPartSegTrainer(BaseTrainer):
             self.train_dataloader = DataLoader(self.train_data, **cfg.data.train_dataloader, sampler=DistributedSampler(self.train_data))
             self.val_dataloader = DataLoader(self.val_data, **cfg.data.val_dataloader, sampler=DistributedSampler(self.val_data))
 
-        self.batch_size = cfg.data.train_dataloader.batch_size
         self.num_points = cfg.data.train.num_points
 
-        self.model, self.optimizer, self.train_dataloader, self.val_dataloader, self.seg_emb, self.pc_embed = self.accelerator.prepare(
+        self.model, self.optimizer, self.train_dataloader, self.val_dataloader = self.accelerator.prepare(
             self.model,
             self.optimizer,
             self.train_dataloader,
             self.val_dataloader,
-            self.seg_emb,
-            self.pc_embed,
         )
+
+        self.val_metrics = {
+            "accuracy": torch.nn.CrossEntropyLoss(),
+            "iou": torch.nn.CrossEntropyLoss(),
+            "dice": torch.nn.CrossEntropyLoss(),
+        }
 
     def train_epoch(self, epoch: int):
         self.model.train()
@@ -82,11 +69,17 @@ class ShapenetPartSegTrainer(BaseTrainer):
             self.progress_manager.add_batch_task(len(self.train_dataloader))
 
         for step, batch in enumerate(self.train_dataloader):
-            loss = self.train_step(batch)
-            total_loss += loss
+            loss_dict = self.train_step(batch)
+            total_loss += loss_dict["loss"]
+
+            global_step = (epoch - 1) * self.num_processes * len(self.train_dataloader) + step * self.num_processes + self.process_index
+            for key, value in loss_dict.items():
+                self.log_metrics({f"train/{key}": value}, global_step)
+            if self.scheduler is not None:
+                self.log_metrics({"lr": self.scheduler.get_last_lr()[0]}, global_step)
 
             if self.is_main:
-                self.progress_manager.update_batch(loss=loss)
+                self.progress_manager.update_batch(loss=loss_dict["loss"])
 
         self.accelerator.wait_for_everyone()
 
@@ -94,28 +87,53 @@ class ShapenetPartSegTrainer(BaseTrainer):
 
     def train_step(self, batch):
         pc, lb, seg, n, f = batch
-
-        seg_emb = self.seg_emb(seg)
-        pc_emb = self.pc_embed(pc)
-        # input to GMFlow has to be (B, C, H, W)
-        # TODO: Proper handling of 3D tensor and point cloud
-        seg_emb = seg_emb.reshape(self.batch_size, self.num_points, self.cfg.trainer.diffusion.embedding.embed_dim, 1, 1)
-        pc_emb = pc_emb.reshape(self.batch_size, self.num_points, self.cfg.trainer.diffusion.embedding.embed_dim, 1, 1)
-
+        batch_size = seg.shape[0]
         self.optimizer.zero_grad()
 
-        with self.accelerator.autocast():
-            loss, log_vars = self.model(seg_emb, pc_emb=pc_emb, return_loss=True)
+        seg = seg.reshape(batch_size, self.num_points, 1, 1, 1)  # input to GMFlow has to be (B, C, H, W, D)
+        pc = pc.reshape(batch_size, self.num_points, 3, 1, 1)  # input to GMFlow has to be (B, C, H, W, D)
 
-        self.accelerator.backward(loss)
+        with self.accelerator.autocast():
+            flow_loss, log_vars = self.model(seg, pc=pc, return_loss=True)
+
+        self.accelerator.backward(flow_loss)
 
         self.optimizer.step()
         self.scheduler.step()
 
-        return loss.item()
+        return {"loss": flow_loss.item()}
 
-    def evaluate(self, epoch: int):
-        pass
+    def validate(self, epoch: int):
+        self.model.eval()
+        total_loss = 0.0
+        metric_values = {name: 0.0 for name in self.val_metrics}
+
+        if hasattr(self.val_dataloader.sampler, "set_epoch"):
+            self.val_dataloader.sampler.set_epoch(epoch)
+
+        if self.is_main:
+            self.progress_manager.add_batch_task(len(self.val_dataloader))
+
+        with torch.no_grad():
+            for step, batch in enumerate(self.val_dataloader):
+                pc, lb, seg, n, f = batch
+
+                batch_size = seg.shape[0]
+
+                seg = seg.reshape(batch_size, self.num_points, 1, 1, 1).float()
+                pc = pc.reshape(batch_size, self.num_points, 3, 1, 1)
+                with self.accelerator.autocast():
+                    seg_emb_pred, velocity_data = self.model(seg, pc=pc, return_loss=False, return_velocity=True)
+
+                if self.is_main:
+                    self.progress_manager.update_batch(loss=0)
+
+        self.accelerator.wait_for_everyone()
+
+        num_batches = len(self.val_dataloader)
+        avg_metrics = {name: value / num_batches for name, value in metric_values.items()}
+
+        return {"val_loss": total_loss, **avg_metrics}
 
     def test(self):
         pass

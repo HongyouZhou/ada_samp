@@ -47,7 +47,6 @@ class SinCos2DPosEmbed(nn.Module):
         """
         return get_2d_sincos_pos_embed(self.num_channels, hidden_states, self.min_period, self.max_period)
 
-
 @register_model("GMFlowMLP2DDenoiser")
 class GMFlowMLP2DDenoiser(nn.Module):
     def __init__(

@@ -82,20 +82,20 @@ class BaseTrainer(ABC):
     noise_sampler: Optional["NoiseSampler"]
     progress_manager: Optional["ProgressManager"]
 
-    def __init__(self, cfg: "DictConfig", accelerator: "Accelerator"):
+    def __init__(self, cfg: "DictConfig", accelerator: "Accelerator", out_dir: str = None, **kwargs):
         self.cfg = cfg
         self.accelerator = accelerator
         self.device = accelerator.device
         self.is_main = accelerator.is_main_process
+        self.num_processes = accelerator.num_processes
+        self.process_index = accelerator.process_index
         self.current_epoch = 0
 
         self.model = None
         self.train_dataloader = None
         self.val_dataloader = None
 
-        timestamp = time.strftime("%Y%m%d_%H%M")
-        self.out_dir = os.path.join(cfg.train.output_dir, cfg.project, timestamp)
-        os.makedirs(self.out_dir, exist_ok=True)
+        self.out_dir = out_dir 
 
     def train(self):
         if self.is_main:
@@ -106,16 +106,16 @@ class BaseTrainer(ABC):
 
         for epoch in range(self.current_epoch + 1, self.cfg.train.epochs + 1):
             self.current_epoch = epoch
-            loss_dict = self.train_epoch(epoch)
+            # loss_dict = self.train_epoch(epoch)
+            loss_dict = {"total_loss": 1.0}
             loss_tensor = torch.tensor(loss_dict["total_loss"], device=self.device)
             gathered = self.accelerator.gather(loss_tensor)
             avg_epoch_loss = gathered.float().mean().item()
-            avg_epoch_loss /= self.accelerator.num_processes
+            avg_epoch_loss /= self.num_processes
             avg_epoch_loss /= len(self.train_dataloader)
-            if self.val_dataloader:
-                self.evaluate(epoch)
+            if self.val_dataloader and epoch % self.cfg.train.val_interval == 0:
+                val_metrics = self.validate(epoch)
             if self.is_main:
-                self.log_metrics(loss_dict, step=epoch, prefix="train")
                 if self.cfg.train.save_checkpoint and epoch % self.cfg.train.save_interval == 0:
                     self.save_checkpoint(epoch)
                 self.progress_manager.update_epoch()
@@ -128,8 +128,8 @@ class BaseTrainer(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def evaluate(self, epoch):
-        metrics = self._evaluate_local(epoch)
+    def validate(self, epoch):
+        metrics = self.validate(epoch)
         for k, v in metrics.items():
             t = torch.tensor(v, device=self.device)
             gathered = self.accelerator.gather(t)
@@ -163,10 +163,9 @@ class BaseTrainer(ABC):
         if self.cfg.debug:
             return
 
-        if self.is_main:
-            try:
-                import wandb
+        try:
+            import wandb
 
-                wandb.log({f"{prefix}/{k}": v for k, v in metrics.items()}, step=step)
-            except ImportError:
-                print("[BaseTrainer] wandb not installed; skipping logging.")
+            wandb.log({f"{prefix}/{k}": v for k, v in metrics.items()}, step=step)
+        except ImportError:
+            print("[BaseTrainer] wandb not installed; skipping logging.")

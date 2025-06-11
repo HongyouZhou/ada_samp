@@ -1,14 +1,12 @@
 import argparse
 import os
+import time
 
 from accelerate import Accelerator
 from omegaconf import OmegaConf
 
 import wandb
 from src.trainers import get_trainer
-
-os.environ['CUDA_LAUNCH_BLOCKING']="1"
-os.environ['TORCH_USE_CUDA_DSA'] = "1"
 
 
 def parse_args():
@@ -37,19 +35,25 @@ def main():
     args = parse_args()
     cfg = load_config(args.config, args.enable_sweep)
 
+    accelerator = Accelerator()
+    
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    out_dir = os.path.join(cfg.train.output_dir, cfg.project, timestamp)
+    if accelerator.is_main_process:
+        os.makedirs(out_dir, exist_ok=True)
+
     if args.enable_wandb:
         wandb.init(
             project=cfg.get("project", "gmflow_project"),
             config=cfg,
+            group=timestamp,
         )
 
     if cfg._sweep_mode and "lr" in cfg.train:
         wandb.run.name = f"sweep_lr{cfg.train.lr:.0e}"
 
-    accelerator = Accelerator()
-
     TrainerClass = get_trainer(cfg)
-    trainer = TrainerClass(cfg, accelerator)
+    trainer = TrainerClass(cfg, accelerator, out_dir=out_dir)
     if cfg.train.resume_checkpoint:
         trainer.load_checkpoint()
     trainer.train()

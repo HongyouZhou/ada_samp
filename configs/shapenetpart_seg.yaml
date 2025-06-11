@@ -10,12 +10,12 @@ trainer:
     embedding:
       type: xxx
       num_classes: 50
-      embed_dim: 256
-      pc_embed_dim: 256
+      embed_dim: 2048
+      pc_embed_dim: 2048
     denoising:
       type: GMFlowMLPLabelDenoiser
-      num_gaussians: 8
-      num_classes: 50
+      num_gaussians: 32
+      embed_dim: 2048
     flow_loss:
       type: GMFlowNLLLoss
       log_cfgs:
@@ -53,7 +53,7 @@ train:
   accumulation_steps: 2
   clip_grad: 1.0
   warmup_steps: 500
-  eval_interval: 5
+  val_interval: 1
   output_dir: outputs/shapenetpart_seg_exp
   save_checkpoint: true
   save_interval: 10  

@@ -63,7 +63,7 @@ class GMFlowTrainer(BaseTrainer):
         if self.accelerator.is_main_process:
             print(f"[Epoch {epoch}] Avg Loss: {avg_loss:.4f}")
 
-    def evaluate(self):
+    def validate(self):
         pass
 
     def load_checkpoint(self):

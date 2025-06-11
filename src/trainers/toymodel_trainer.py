@@ -24,8 +24,8 @@ if TYPE_CHECKING:
 
 @register_trainer("toymodel")
 class CheckboardTrainer(BaseTrainer):
-    def __init__(self, cfg, accelerator: "Accelerator"):
-        super().__init__(cfg, accelerator)
+    def __init__(self, cfg, accelerator: "Accelerator", **kwargs):
+        super().__init__(cfg, accelerator, **kwargs)
         self.model = GMFlow(**cfg.trainer.diffusion, test_cfg=cfg.test_cfg)
         self.optimizer = th.optim.AdamW(self.model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
 
@@ -72,7 +72,7 @@ class CheckboardTrainer(BaseTrainer):
         return {"total_loss": total_loss}
 
     def train_step(self, batch):
-        x = batch["x"].reshape(self.batch_size, 2, 1, 1, 1)
+        x = batch["x"].reshape(self.batch_size, 2, 1, 1)
 
         self.optimizer.zero_grad()
         with self.accelerator.autocast():
@@ -85,7 +85,7 @@ class CheckboardTrainer(BaseTrainer):
 
         return loss.item()
 
-    def evaluate(self):
+    def validate(self):
         pass
 
     def test(self):
@@ -109,7 +109,7 @@ class CheckboardTrainer(BaseTrainer):
         with progress:
             task = progress.add_task("Generating samples...", total=int(self.cfg.test.n_samples // self.cfg.data.train_dataloader.batch_size))
             for _ in range(int(self.cfg.test.n_samples // self.cfg.data.train_dataloader.batch_size)):
-                noise = torch.randn((self.cfg.data.train_dataloader.batch_size, 2, 1, 1, 1), device=self.device)
+                noise = torch.randn((self.cfg.data.train_dataloader.batch_size, 2, 1, 1), device=self.device)
                 x_t, velocity_data = self.model(x_0=noise, return_loss=False, return_velocity=True)
                 samples.append(x_t.reshape(self.cfg.data.train_dataloader.batch_size, 2).cpu().detach().numpy())
                 progress.update(task, advance=1)
