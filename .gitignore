@@ -5,7 +5,6 @@ __pycache__
 
 # Files/ training data
 data
-datasets
 outputs
 image
 *.h5
