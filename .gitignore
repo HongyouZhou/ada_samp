@@ -4,9 +4,9 @@
 __pycache__
 
 # Files/ training data
-data
-outputs
-image
+/data
+/outputs
+/image
 *.h5
 *.log.global
 **/log
